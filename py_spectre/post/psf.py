@@ -6,6 +6,7 @@ import unittest
 import struct, os, re
 import operator
 import numpy
+import psfasc
 from copy import copy
 
 from struct import unpack, pack
@@ -81,42 +82,31 @@ class Int8(PSFNumber):
     def deSerializeFile(self, file, size=None):
         data=file.read(self.size)
         self.value = unpack("b",data[3])[0]
-        print 'Int8:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
-
 class UInt8(PSFNumber):
     size=4
     def deSerializeFile(self, file, size=None):
         data=file.read(self.size)
         self.value = unpack("B",data[3])[0]
-        print 'UInt8:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
-
 class Int32(PSFNumber):
     size=4
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">i",file.read(self.size))[0]
-        print 'Int32:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
-
 class UInt32(PSFNumber):
     size=4
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">I",file.read(self.size))[0]
-        print 'UInt32:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
-
 class Int64(PSFNumber):
     size=8
     def __int__(self):
         return self.value
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">q",file.read(self.size))[0]
-        print 'Int64:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
 class UInt64(PSFNumber):
     size=8
     def __int__(self):
         return self.value
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">Q",file.read(self.size))[0]
-        print 'UInt64:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
-
 
 class Float64(PSFNumber):
     size=8
@@ -132,7 +122,6 @@ class Float64(PSFNumber):
 
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">d",file.read(self.size))[0]
-        print 'Float64:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
 
 class Float32(PSFNumber):
     size=4
@@ -140,7 +129,6 @@ class Float32(PSFNumber):
         return float(self.value)
     def deSerializeFile(self, file, size=None):
         self.value = unpack(">f",file.read(self.size))[0]
-        print 'Float32:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
 
 class ComplexFloat64(PSFNumber):
     size=16
@@ -155,7 +143,6 @@ class ComplexFloat64(PSFNumber):
     def deSerializeFile(self, file, size=None):
         re,im = unpack(">dd",file.read(self.size))
         self.value = complex(re,im)
-        print 'ComplexFloat64:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
 
 class String(PSFData):
     def __str__(self):
@@ -164,7 +151,6 @@ class String(PSFData):
         self.len = unpack(">I",file.read(4))[0]
         if self.len < 0x100:
             self.value = file.read(self.len)
-            print 'String:' + str(self.value) + ', fin.tell() = ' + str(file.tell())
             # Pad to 32-bit boundary
             file.read((4-self.len)%4)
         else:
@@ -1204,7 +1190,6 @@ def readChunk(psf, file, expectedclasses=None):
     else:
         raise Exception("Use expectedclasses!")
         if type == 21:
-            print type
             chunk = Section(psf)
         elif type == 20:
             chunk = ZeroPad(psf)
@@ -1255,12 +1240,25 @@ class PSFReader(object):
         >>> psf.open()
         """
         
-        self.file = open(self.filename, "rb")
-        
-        if self.validate():
-            self.deSerializeFile(self.file)
+        if self.asc == None:
+            self.asc = psfasc.is_psfasc(self.filename)
+
+        if not self.asc:
+            self.file = open(self.filename, "rb")
+            
+            if self.validate():
+                self.deSerializeFile(self.file)
+            else:
+                raise PSFInvalid("Invalid PSF file")
         else:
-            raise PSFInvalid("Invalid PSF file")
+            newpsfobj = psfasc.parse("psfasc", open(self.filename).read())
+            self.header = newpsfobj.header                
+            self.types = newpsfobj.types
+            self.sweeps = newpsfobj.sweeps
+            self.traces = newpsfobj.traces
+            self.values = newpsfobj.values
+            self.lastid = newpsfobj.lastid
+            self.verbose = newpsfobj.verbose
             
     def validate(self):
         """Check if the PSF file is valid.
