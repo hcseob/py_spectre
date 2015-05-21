@@ -1,0 +1,730 @@
+import os
+import re
+
+# statements without unique identifiers
+# TODO(ryan) complete this list
+_NONUNIQUE_KEYS = ['ic', 'include', 'save', 'vary'] 
+_SUBNETLIST_START_LIST = ['subckt', 'section']
+_SUBNETLIST_END_LIST = ['ends', 'endsection']
+_SCALE_FACTOR_DICT = {'P':1e15, 'T':1e12, 'G':1e9, 'M':1e6, 'K':1e3, 'k':1e3,
+                      '_':1, '%':1e-2, 'c':1e-2, 'm':1e-3, 'u':1e-6, 'n':1e-9,
+                      'p':1e-12, 'f':1e-15, 'a':1e-18, 'z':1e-21, 'y':1e-24}
+
+# Backport of OrderedDict() class that runs on Python 2.4, 2.5, 2.6, 2.7 and pypy.
+# Passes Python2.7's test suite and incorporates all the latest updates.
+# From the recipe from section 8.5.3 of the online Python documentation.
+
+try:
+    from thread import get_ident as _get_ident
+except ImportError:
+    from dummy_thread import get_ident as _get_ident
+
+try:
+    from _abcoll import KeysView, ValuesView, ItemsView
+except ImportError:
+    pass
+
+
+class OrderedDict(dict):
+    'Dictionary that remembers insertion order'
+    # An inherited dict maps keys to values.
+    # The inherited dict provides __getitem__, __len__, __contains__, and get.
+    # The remaining methods are order-aware.
+    # Big-O running times for all methods are the same as for regular dictionaries.
+
+    # The internal self.__map dictionary maps keys to links in a doubly linked list.
+    # The circular doubly linked list starts and ends with a sentinel element.
+    # The sentinel element never gets deleted (this simplifies the algorithm).
+    # Each link is stored as a list of length three:  [PREV, NEXT, KEY].
+
+    def __init__(self, *args, **kwds):
+        '''Initialize an ordered dictionary.  Signature is the same as for
+        regular dictionaries, but keyword arguments are not recommended
+        because their insertion order is arbitrary.
+
+        '''
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        try:
+            self.__root
+        except AttributeError:
+            self.__root = root = []                     # sentinel node
+            root[:] = [root, root, None]
+            self.__map = {}
+        self.__update(*args, **kwds)
+
+    def __setitem__(self, key, value, dict_setitem=dict.__setitem__):
+        'od.__setitem__(i, y) <==> od[i]=y'
+        # Setting a new item creates a new link which goes at the end of the linked
+        # list, and the inherited dictionary is updated with the new key/value pair.
+        if key not in self:
+            root = self.__root
+            last = root[0]
+            last[1] = root[0] = self.__map[key] = [last, root, key]
+        dict_setitem(self, key, value)
+
+    def __delitem__(self, key, dict_delitem=dict.__delitem__):
+        'od.__delitem__(y) <==> del od[y]'
+        # Deleting an existing item uses self.__map to find the link which is
+        # then removed by updating the links in the predecessor and successor nodes.
+        dict_delitem(self, key)
+        link_prev, link_next, key = self.__map.pop(key)
+        link_prev[1] = link_next
+        link_next[0] = link_prev
+
+    def __iter__(self):
+        'od.__iter__() <==> iter(od)'
+        root = self.__root
+        curr = root[1]
+        while curr is not root:
+            yield curr[2]
+            curr = curr[1]
+
+    def __reversed__(self):
+        'od.__reversed__() <==> reversed(od)'
+        root = self.__root
+        curr = root[0]
+        while curr is not root:
+            yield curr[2]
+            curr = curr[0]
+
+    def clear(self):
+        'od.clear() -> None.  Remove all items from od.'
+        try:
+            for node in self.__map.itervalues():
+                del node[:]
+            root = self.__root
+            root[:] = [root, root, None]
+            self.__map.clear()
+        except AttributeError:
+            pass
+        dict.clear(self)
+
+    def popitem(self, last=True):
+        '''od.popitem() -> (k, v), return and remove a (key, value) pair.
+        Pairs are returned in LIFO order if last is true or FIFO order if false.
+
+        '''
+        if not self:
+            raise KeyError('dictionary is empty')
+        root = self.__root
+        if last:
+            link = root[0]
+            link_prev = link[0]
+            link_prev[1] = root
+            root[0] = link_prev
+        else:
+            link = root[1]
+            link_next = link[1]
+            root[1] = link_next
+            link_next[0] = root
+        key = link[2]
+        del self.__map[key]
+        value = dict.pop(self, key)
+        return key, value
+
+    # -- the following methods do not depend on the internal structure --
+
+    def keys(self):
+        'od.keys() -> list of keys in od'
+        return list(self)
+
+    def values(self):
+        'od.values() -> list of values in od'
+        return [self[key] for key in self]
+
+    def items(self):
+        'od.items() -> list of (key, value) pairs in od'
+        return [(key, self[key]) for key in self]
+
+    def iterkeys(self):
+        'od.iterkeys() -> an iterator over the keys in od'
+        return iter(self)
+
+    def itervalues(self):
+        'od.itervalues -> an iterator over the values in od'
+        for k in self:
+            yield self[k]
+
+    def iteritems(self):
+        'od.iteritems -> an iterator over the (key, value) items in od'
+        for k in self:
+            yield (k, self[k])
+
+    def update(*args, **kwds):
+        '''od.update(E, **F) -> None.  Update od from dict/iterable E and F.
+
+        If E is a dict instance, does:           for k in E: od[k] = E[k]
+        If E has a .keys() method, does:         for k in E.keys(): od[k] = E[k]
+        Or if E is an iterable of items, does:   for k, v in E: od[k] = v
+        In either case, this is followed by:     for k, v in F.items(): od[k] = v
+
+        '''
+        if len(args) > 2:
+            raise TypeError('update() takes at most 2 positional '
+                            'arguments (%d given)' % (len(args),))
+        elif not args:
+            raise TypeError('update() takes at least 1 argument (0 given)')
+        self = args[0]
+        # Make progressively weaker assumptions about "other"
+        other = ()
+        if len(args) == 2:
+            other = args[1]
+        if isinstance(other, dict):
+            for key in other:
+                self[key] = other[key]
+        elif hasattr(other, 'keys'):
+            for key in other.keys():
+                self[key] = other[key]
+        else:
+            for key, value in other:
+                self[key] = value
+        for key, value in kwds.items():
+            self[key] = value
+
+    __update = update  # let subclasses override update without breaking __init__
+
+    __marker = object()
+
+    def pop(self, key, default=__marker):
+        '''od.pop(k[,d]) -> v, remove specified key and return the corresponding value.
+        If key is not found, d is returned if given, otherwise KeyError is raised.
+
+        '''
+        if key in self:
+            result = self[key]
+            del self[key]
+            return result
+        if default is self.__marker:
+            raise KeyError(key)
+        return default
+
+    def setdefault(self, key, default=None):
+        'od.setdefault(k[,d]) -> od.get(k,d), also set od[k]=d if k not in od'
+        if key in self:
+            return self[key]
+        self[key] = default
+        return default
+
+    def __repr__(self, _repr_running={}):
+        'od.__repr__() <==> repr(od)'
+        call_key = id(self), _get_ident()
+        if call_key in _repr_running:
+            return '...'
+        _repr_running[call_key] = 1
+        try:
+            if not self:
+                return '%s()' % (self.__class__.__name__,)
+            return '<%s with keys = %r>' % (self.__class__.__name__, self.keys())
+        finally:
+            del _repr_running[call_key]
+
+    def __reduce__(self):
+        'Return state information for pickling'
+        items = [[k, self[k]] for k in self]
+        inst_dict = vars(self).copy()
+        for k in vars(OrderedDict()):
+            inst_dict.pop(k, None)
+        if inst_dict:
+            return (self.__class__, (items,), inst_dict)
+        return self.__class__, (items,)
+
+    def copy(self):
+        'od.copy() -> a shallow copy of od'
+        return self.__class__(self)
+
+    @classmethod
+    def fromkeys(cls, iterable, value=None):
+        '''OD.fromkeys(S[, v]) -> New ordered dictionary with keys from S
+        and values equal to v (which defaults to None).
+
+        '''
+        d = cls()
+        for key in iterable:
+            d[key] = value
+        return d
+
+    def __eq__(self, other):
+        '''od.__eq__(y) <==> od==y.  Comparison to another OD is order-sensitive
+        while comparison to a regular mapping is order-insensitive.
+
+        '''
+        if isinstance(other, OrderedDict):
+            return len(self)==len(other) and self.items() == other.items()
+        return dict.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self == other
+
+    # -- the following methods are only used in Python 2.7 --
+
+    def viewkeys(self):
+        "od.viewkeys() -> a set-like object providing a view on od's keys"
+        return KeysView(self)
+
+    def viewvalues(self):
+        "od.viewvalues() -> an object providing a view on od's values"
+        return ValuesView(self)
+
+    def viewitems(self):
+        "od.viewitems() -> a set-like object providing a view on od's items"
+        return ItemsView(self)
+
+
+class NetlistStatement(dict):
+    def __init__(self, name, master='', nodes=[], parameters=None)):
+        if parameters is None:
+            parameters = OrderedDict()
+        self["name"] = name
+        self["master"] = master
+        self["nodes"] = nodes
+        self["parameters"] = parameters
+
+    def __repr__(self):
+        string = self["name"] + ' '
+        for node in self["nodes"]:
+            string += node + ' '
+        if self["master"] != '':
+            string += self["master"] + ' '
+        for param_name in self["parameters"]:
+            string += param_name + '=' + self["parameters"][param_name] + ' '
+        return string
+
+
+class PySpectreScript:
+    def __init__(self):
+        self.netlist = OrderedDict()
+        self.command_line_args = []
+        self.path_to_script = ''
+
+    def add_command_line_args(self, *arg):
+        self.command_line_args += arg
+
+    def get_path_to_results(self):
+        for command_line_arg in self.command_line_args:
+            if command_line_arg[0:4] == '+raw':
+                return command_line_arg.split()[1].strip()
+        else:
+            return None
+
+    def set_path_to_results(self, path_to_results):
+        self.command_line_args[:] = [cmdlnarg for cmdlnarg in self.command_line_args if not cmdlnarg[0:4] == '+raw']
+        self.add_command_line_args('+raw %s' % path_to_results)
+
+    def add_statement_at(self, position_num, name, master='', nodes=[],
+                         parameters=OrderedDict()):
+        return False
+
+    def add_statement_after(self, name_before, name, master='', nodes=[],
+                            parameters=OrderedDict()):
+        return False
+
+    def add_statement_before(self, name_after, name, master='', nodes=[],
+                             parameters=OrderedDict()):
+        return False
+
+    def search(self, statement_name):
+        return False
+
+    def run_script(self, path='', command_line_args=[]):
+        if path:
+            self.path_to_script = path
+        if command_line_args:
+            self.add_command_line_args(command_line_args)
+        os.system(_command_str(self.path_to_script, self.command_line_args))
+        return True
+
+    def read_script(self, path):
+        fin = open(path, 'r')
+        self.netlist = _read_section(fin)
+        fin.close()
+        return True
+
+    def write_script(self, path):
+        """ Writes the netlist contents to file."""
+        self.path_to_script = path
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        fout = open(path, 'w')
+        _write_section(fout, self.netlist)
+        fout.close()
+        return True
+
+##################################
+# write_script support functions.#
+##################################
+
+def _write_section(fout, netlist_statements):
+    """Writes netlist and subnetlists to file recursively."""
+    for netlist_statement in netlist_statements.values():
+        if netlist_statement.__class__.__name__ == 'NetlistStatement':
+            if '_curly_subcircuit' in netlist_statement:
+                fout.write(repr(netlist_statement) + ' {\n')
+                _write_section(fout, netlist_statement['_curly_subcircuit'])
+                fout.write('}\n')
+            else:
+                fout.write(repr(netlist_statement) + '\n')
+        elif netlist_statement.__class__.__name__ == 'list':
+            # found a nonunique list
+            netlist_statement_list = list(netlist_statement)
+            for netlist_statement in netlist_statement_list:
+                fout.write(repr(netlist_statement) + '\n')
+        else:  # found a subnetlist
+            fout.write('\n')
+            # recurse to write the subnetlist
+            _write_section(fout, netlist_statement)
+            fout.write('\n')
+
+################################
+# run_script support functions.#
+################################
+
+def _command_str(path, command_line_args):
+    command_str = 'spectre %s ' % path
+    for command in command_line_args:
+        command_str += command + ' '
+    return command_str
+
+def run_script(path, command_line_args):
+    """Public function"""
+    os.system(_command_str(path, command_line_args))
+    return True
+
+#################################
+# read_script support functions.#
+#################################
+
+def _parse_statement(netlist_statement_line):
+    split_parameter_list = netlist_statement_line.split('=')
+    netlist_statement = NetlistStatement(name='', parameters=OrderedDict())
+    if len(split_parameter_list) != 1:  # if there are parameters
+        # split_statement = [name, [node0, node1,...], [master], first_param]
+        split_statement = split_parameter_list.pop(0).split()
+        if len(split_statement) >= 3:  # if there is a master
+            netlist_statement["master"] = split_statement[-2]
+        if len(split_statement) >= 4:  # if there are nodes
+            netlist_statement["nodes"] = split_statement[1:-2]
+        # start parsing parameters
+        param_name = split_statement[-1]
+        for n, split_parameter in enumerate(split_parameter_list):
+            param_list_part = split_parameter.split()
+            if n == len(split_parameter_list)-1:  # if last split_parameter
+                param_value = split_parameter
+            else:  # not last split_parameter
+                # join all except the last one (i.e. the param_name)
+                param_value = ''.join(param_list_part[:-1])
+            netlist_statement["parameters"][param_name.strip()] = param_value.strip()
+            param_name = param_list_part[-1]
+    else:  # there are no parameters and, therefore, no master
+        # split_statement = [name, [node0, node1,...]]
+        split_statement = netlist_statement_line.split()
+        if len(split_statement) > 1:  # if there are nodes
+            netlist_statement["nodes"] = split_statement[1:]
+    netlist_statement["name"] = split_statement[0]
+    return netlist_statement
+
+def _strip_conts(line, had_backslash):
+    if _has_backslash_continuation(line):
+        line = line[:-1]
+    if _has_plus_cont(line, had_backslash):
+        line = line[1:]
+    return line
+
+def _has_backslash_continuation(stripped_line):
+    if stripped_line:
+        return stripped_line[-1] == '\\'
+    else:
+        return False
+
+def _has_plus_cont(stripped_line, had_backslash):
+    # the first character can be a '+' if the line is continuing
+    if stripped_line:
+        return (stripped_line[0] == '+') and (not had_backslash)
+    else:
+        return False
+
+def _read_section(fin, netlist_statement_line=''):
+    netlist_statements = OrderedDict()
+    had_backslash = False
+    for line in fin:
+        stripped_line = line.split('//')[0].strip() # remove and discard commments
+        stripped_line = re.sub(r'[()]', '', stripped_line) # remove parentheses
+        netlist_statement_segment = _strip_conts(stripped_line, had_backslash)
+        if _has_plus_cont(stripped_line, had_backslash) or had_backslash:
+            netlist_statement_line += netlist_statement_segment
+        else:  # start of a new statement
+            if netlist_statement_line:  # if not empty
+                netlist_statement = _parse_statement(netlist_statement_line)
+                add_netlist_statement(netlist_statements, netlist_statement)
+            if netlist_statement_segment:
+                segment_name = netlist_statement_segment.split()[0]
+                if segment_name in _SUBNETLIST_START_LIST:
+                    # found start of subnetlist, step into recursion
+                    # use next line just to get the name
+                    first_statement = _parse_statement(netlist_statement_segment)
+                    sub_name = first_statement["nodes"][0]  # subckt subckt_name
+                    sub_statements = _read_section(fin, netlist_statement_segment)
+                    netlist_statements[sub_name] = sub_statements
+                elif segment_name in _SUBNETLIST_END_LIST:
+                    # found end of subnetlist
+                    netlist_statement = _parse_statement(netlist_statement_segment)
+                    add_netlist_statement(netlist_statements, netlist_statement)
+                    # step out of recursion
+                    return netlist_statements
+                elif netlist_statement_segment[-1] == '{':
+                    netlist_statement = _parse_statement(netlist_statement_segment[:-1].strip())
+                    sub_statements = _read_section(fin)
+                    netlist_statement['_curly_subcircuit'] = sub_statements
+                    add_netlist_statement(netlist_statements, netlist_statement)
+                elif netlist_statement_segment[-1] == '}':
+                    return netlist_statements
+                else:
+                    # netlist statement saved, overwrite now
+                    netlist_statement_line = netlist_statement_segment
+            else:  # empty line and no line continuations
+                netlist_statement_line = ''
+        # check for backslash continuation and save for operations on next line
+        had_backslash = _has_backslash_continuation(stripped_line)
+    # end of file, parse last netlist statement
+    if netlist_statement_line:  # if not empty
+        netlist_statement = _parse_statement(netlist_statement_line)
+        add_netlist_statement(netlist_statements, netlist_statement)
+    return netlist_statements
+
+def add_netlist_statement(netlist_statements, netlist_statement):
+    key = netlist_statement["name"]
+    if key in _NONUNIQUE_KEYS:
+        if key not in netlist_statements:
+            netlist_statements[key] = []
+        netlist_statements[key].append(netlist_statement)
+    else:
+        netlist_statements[key] = netlist_statement
+
+
+################
+# read_results #
+################
+
+def read_results(path, node = '', all_results = False):
+    """ Read results for spectre psfascii results files.
+
+    Behavior is similar to cds_srr() for MATLAB. """
+    if os.path.isdir(path):
+        return os.listdir(path)
+    elif os.path.isfile(path):
+        if node or all_results:
+            return _parse_all(path, node, all_results)
+        else:
+            return _parse_outputs(path)
+    else:
+        raise Exception('No results at %s.' % path)
+
+def _parse_outputs(path):
+    fin = open(path, 'r')
+    preamble = _parse_preamble_sections(fin)
+    if 'TRACE' in preamble:
+        outputs = preamble['TRACE'].keys()
+    else:
+        data = _parse_point(fin, '', preamble)
+        outputs = data.keys()
+    fin.close()
+    return outputs
+        
+def _parse_all(path, node, all_results):
+    fin = open(path, 'r')
+    preamble = _parse_preamble_sections(fin)
+    if all_results:
+        # all_results flag takes precedence over node value
+        value = _parse_value_section(fin, '', preamble)
+    else:
+        value = _parse_value_section(fin, node, preamble)
+    fin.close()
+    return value
+
+def _parse_preamble(path):
+    fin = open(path, 'r')
+    preamble = _parse_preamble_sections(fin)
+    fin.close()
+    return preamble
+
+###########################
+# Parse preamble sections.#
+###########################
+
+def _parse_preamble_sections(fin):
+    """ Find results routing function. """
+    parse_dict_sections = ['HEADER', 'TRACE']
+    parse_props_sections = ['TYPE', 'SWEEP']
+    end_sections = ['VALUE', 'END']
+    sections = {}
+    section = 'HEADER'
+    while section not in end_sections:
+        if section in parse_dict_sections:
+            sections[section], section = _parse_props(fin)
+        elif section in parse_props_sections:
+            sections[section], section = _parse_props(fin)
+        else:
+            raise Exception('Found unrecognized section: %s.' % section)
+    return sections
+
+def _parse_dict(fin):
+    end_string_list = [')', 'TYPE', 'SWEEP', 'TRACE', 'VALUE', 'END']
+    dict = OrderedDict() 
+    for line in fin:
+        stripped_line = line.strip()
+        if stripped_line in end_string_list:
+            end_string = stripped_line
+            return dict, end_string
+        match = re.search(r'"(.+)"\s+"(.+)"', stripped_line)
+        if match:
+            dict[match.group(1)] = match.group(2)
+    return dict, ''
+
+def _parse_props(fin):
+    end_string_list = [')', 'TYPE', 'SWEEP', 'TRACE', 'VALUE', 'END']
+    props_dict = OrderedDict()
+    for line in fin:
+        stripped_line = line.strip()
+        if stripped_line in end_string_list:  # found end of STRUCT or end of TYPE
+            end_string = stripped_line
+            return props_dict, end_string 
+        match = re.search(r'^"(.+?)"(.*)\s(\w+)\(', stripped_line)
+        if match:
+            name = match.group(1)
+            type = match.group(2)
+            prop = match.group(3)
+            if prop == 'STRUCT':  # need to recurse
+                props_dict[name], _ = _parse_props(fin)
+                props_dict[name]['type'] = 'STRUCT' 
+            elif prop == 'PROP':
+                props_dict[name], _ = _parse_dict(fin)
+                props_dict[name]['type'] = type.strip()
+        else:  # possibly a nonprop, key/value pair
+            match = re.search(r'"(.+)"\s+"(.+)"', stripped_line)
+            if match:
+                props_dict[match.group(1)] = match.group(2)
+    return props_dict, ''
+
+
+#######################
+# Parse VALUE section.#
+#######################
+
+def _parse_value_section(fin, node, preamble):
+    if 'SWEEP' in preamble:
+        return _parse_sweep(fin, node, preamble)
+    else: 
+        return _parse_point(fin, node, preamble) 
+
+def _parse_point(fin, node, preamble):
+    point = OrderedDict()
+    for line in fin:
+        match = re.search(r'"(.+)"\s"(.+)"\s(.+)', line)
+        if match:
+            net = match.group(1)
+            master = match.group(2)
+            value = match.group(3)
+            if not node or node == net:
+                point[net] = string_to_float(value) 
+    return point
+
+def _parse_sweep(fin, node, preamble):
+    sweep_var = preamble['SWEEP'].keys()[0]  # only one prop key in SWEEP  
+    data = {}
+    # inialize the data dict
+    COMPLEX_list = []
+    FLOAT_list = []
+    STRUCT_list = []
+    STRUCT_subname_dict = {}
+    STRUCT_subtype_dict = {}
+    data[sweep_var] = []
+    if node:
+        name_list = [node]
+    else:
+        name_list = preamble['TRACE'].keys()
+    for name in name_list:
+        master = preamble['TRACE'][name]
+        if master.__class__.__name__ == 'OrderedDict':
+            master = master['units']
+        type = preamble['TYPE'][master]['type']
+        if type == 'STRUCT':
+            STRUCT_list.append(name)
+            STRUCT_subname_dict[name] = [key for key in preamble['TYPE'][master] if key != 'type']
+            STRUCT_subtype_dict[name] = [preamble['TYPE'][master][subname]['type'] for subname in STRUCT_subname_dict[name]]
+            data[name] = {}
+            for key in preamble['TYPE'][master]:
+                if key != 'type':
+                    data[name][key] = []
+        elif type == 'FLOAT DOUBLE':
+            FLOAT_list.append(name)
+            data[name] = []
+        elif type == 'COMPLEX DOUBLE':
+            COMPLEX_list.append(name)
+            data[name] = []
+    # parse the file
+    parsing_STRUCT = False
+    for line in fin:
+        if parsing_STRUCT:
+            value = line.strip()
+            if value == ')':
+                parsing_STRUCT = False
+            else: 
+                subname = STRUCT_subname_dict[name_STRUCT][count_STRUCT]
+                type = STRUCT_subtype_dict[name_STRUCT][count_STRUCT]
+                if type == 'COMPLEX DOUBLE':
+                    data[name_STRUCT][subname].append(_parse_complex(value))
+                elif type == 'FLOAT DOUBLE':
+                    data[name_STRUCT][subname].append(string_to_float(value))
+                else:
+                    data[name_STRUCT][subname].append(string_to_float(value))
+                count_STRUCT += 1 
+        else:  # not parsing a struct
+            match = re.search(r'"(.+)"\s(.+)', line)
+            if match:
+                name = match.group(1)
+                value = match.group(2)
+                if name == sweep_var:
+                    data[sweep_var].append(string_to_float(value))
+                elif name in FLOAT_list:
+                    data[name].append(string_to_float(value))
+                elif name in COMPLEX_list:
+                    data[name].append(_parse_complex(value))
+                elif name in STRUCT_list:
+                    parsing_STRUCT = True 
+                    name_STRUCT = name
+                    count_STRUCT = 0
+    return data
+
+
+def _parse_complex(value):
+    match = re.search(r'\((.+)\s(.+)\)', value)
+    if match:
+        real = string_to_float(match.group(1))
+        imag = string_to_float(match.group(2))
+        return real + imag * 1j 
+
+def string_to_float(string):
+    """ Can be used to convert a spectre string number to float.
+
+    string_to_float(string) """
+    if (type(string) == float) or (type(string) == int): # already a float
+        return float(string)
+    else:
+        match = re.search(r'(^[-\+\d.]+)(.?)', string) # PTGMKk_%cmunpfazyeE
+        if match:
+            base = float(match.group(1))
+            scale_factor = match.group(2)
+            if scale_factor:
+                if scale_factor.lower() == 'e': # check for exponential notation
+                    try:
+                        return float(string)
+                    except ValueError:
+                        return string
+                elif scale_factor in _SCALE_FACTOR_DICT:
+                    return base * _SCALE_FACTOR_DICT[scale_factor] 
+                else: # not a number, maybe a expression?
+                    return string
+            else:  # no scale factor
+                return base
+
+
