@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 
@@ -17,7 +18,7 @@ class NetlistStatement(object):
         subnetlist: A list of NetlistStatement objects. It is a representation
         of a sprectre subnetlist contained in curly braces.
     """
-    def __init__(self, name='', nodes=None, master='', parameters=None, subnetlist=None):
+    def __init__(self, name='', nodes=None, parameters=None, subnetlist=None):
         if nodes is None:
             nodes = []
         if parameters is None:
@@ -25,70 +26,126 @@ class NetlistStatement(object):
         if subnetlist is None:
             subnetlist = []
         self.name = name
-        self.master = master
         self.nodes = nodes
         self.parameters = parameters
         self.subnetlist = subnetlist
-            
+
+    def get_master(self):
+        if self.nodes:
+            return self.nodes[-1]
+        else:
+            return ''
+
+    def set_master(self, value):
+        if self.nodes and value:
+            self.nodes[-1] = value
+        elif value:
+            self.nodes = [value]
+
+    master = property(get_master, set_master)
+    
+    def replace(self, old, new):
+        self.name = self.name.replace(old, new)
+        self.master = self.master.replace(old, new)
+        for j, node in enumerate(self.nodes):
+            self.nodes[j] = self.nodes[j].replace(old, new)
+        for key in self.parameters:
+            new_key = key.replace(old, new)
+            val = self.parameters.pop(key)
+            new_val = val.replace(old, new)
+            self.parameters[new_key] = new_val
+
+    def change(self, key, value):
+        if key == 'name':
+            self.name = value
+        elif key == 'master':
+            self.master = value
+        elif key in self.nodes:
+            for index, node in enumerate(self.nodes):
+                if key == node:
+                    self.nodes[index] = value
+        elif key in self.parameters:
+            self.parameters[key] = value
+
+    def scale(self, p_name, alpha):
+        if p_name in self.parameters:
+            p_val = string_to_float(self.parameters[p_name])
+            if not isinstance(p_val, str): 
+                self.parameters[p_name] = p_val * alpha
+
+    def del_param(self, key):
+        if key in self.parameters:
+            del self.parameters[key]
+
+    def add_param(self, param_name, param_value):
+        self.parameters[param_name] = param_value
+           
     def __str__(self):
         string = self.name + ' '
         for node in self.nodes:
             string += node + ' '
-        if self.master != '':
-            string += self.master
-        for param_name in self.parameters:
-            param_val = self.parameters[param_name]
-            string += ' ' + param_name + '=' + str(param_val)
+        for p_name, p_val in sorted(self.parameters.items()):
+            string += ' ' + p_name + '=' + str(p_val)
         return string
 
     def __repr__(self):
-        string = str(self)
+        string = str(self) 
         if self.subnetlist:
             string += ' { ... }'
         return string
 
-    @staticmethod
-    def _ns_match(name='', master='', node_name='', param_name='', param_value='', regex=False):
+    def _ns_match(self, name='', master='', node='', p_name='', p_val='', regex=False):
         """  Identify netlist statement with conditions. 
         
         This method will return true is there is a match for all inputs
         provided. The method supports the '*' wild card character. Regular
         expressions are supported through the regex flag. Comparison functions
-        are supported for the param_value input. 
+        are supported for the p_val input. 
         """
         if not regex:
             name = name.replace('*', '.*?')
             master = master.replace('*', '.*?')
-            node_name = node_name.replace('*', '.*?')
-            param_name = param_name.replace('*', '.*?')
-            param_value = param_value.replace('*', '.*?')
+            node = node.replace('*', '.*?')
+            p_name = p_name.replace('*', '.*?')
+            if isinstance(p_val, str): p_val = p_val.replace('*', '.*?')
         match = True
+        if name and not self.name: match = False
+        if master and not self.master: match = False
+        if node and not self.nodes: match = False
+        if p_name and not self.parameters: match = False
+        if p_val and not self.parameters: match = False 
         if name: match &= bool(re.match('^' + name + '$', self.name))
         if master: match &= bool(re.match('^' + master + '$', self.master))
-        if node_name:
+        if node:
             node_match = False
-            for node in self.nodes:
+            for node_name in self.nodes:
                 node_match |= bool(re.match('^' + node_name + '$', node))
             match &= node_match
-        if param_name and param_value:
+        if p_name and p_val:
             param_match = False
             for key in self.parameters:
-                if re.match('^' + param_name + '$', key):
+                if re.match('^' + p_name + '$', key):
                     value = self.parameters[key]
-                    if isinstance(param_value, function):
-                        param_match |= param_value(string_to_float(value)) 
+                    if hasattr(p_val, '__call__'):
+                        value_float = string_to_float(value)
+                        if isinstance(value_float, str): 
+                            param_match = False
+                        else:
+                            param_match |= p_val(value_float) 
+                        if not isinstance(param_match, bool):
+                            param_match = False
                     else:
-                        param_match |= bool(re.match('^' + param_value + '$', value))
+                        param_match |= bool(re.match('^' + p_val + '$', value))
             match &= param_match
-        elif param_name:
+        elif p_name:
             param_name_match = False
             for key in self.parameters:
-                param_name_match |= bool(re.match('^' + param_name + '$', key))
+                param_name_match |= bool(re.match('^' + p_name + '$', key))
             match &= param_name_match
-        elif param_value:
+        elif p_val:
             param_value_match = False
-            for value in ns.parameters.values():
-                param_value_match |= bool(re.match('^' + str(param_value) + '$', value))
+            for value in self.parameters.values():
+                param_value_match |= bool(re.match('^' + str(p_val) + '$', value))
             match &= param_value_match
         return match
 
@@ -128,15 +185,12 @@ class NetlistStatement(object):
 
         split_param_list = ns_string.split('=')
         parameters = {}
-        master = ''
         nodes = []
         if len(split_param_list) != 1:  # if there are parameters
-            # split_statement = [name, [node0, node1,...], [master], first_param]
+            # split_statement = [name, [node0, node1,...], first_param]
             split_statement = split_param_list.pop(0).split()
-            if len(split_statement) >= 3:  # if there is a master
-                master = split_statement[-2]
-            if len(split_statement) >= 4:  # if there are nodes
-                nodes = split_statement[1:-2]
+            if len(split_statement) >= 3:  # if there are nodes
+                nodes = split_statement[1:-1]
             # start parsing parameters
             param_name = split_statement[-1]
             for n, split_param in enumerate(split_param_list):
@@ -147,95 +201,168 @@ class NetlistStatement(object):
                     param_value = ' '.join(param_list_part[:-1]) # join except param_name
                 parameters[param_name.strip()] = param_value.strip()
                 param_name = param_list_part[-1]
-        else:  # there are no parameters and, therefore, no master
+        else:  # there are no parameters
             # split_statement = [name, [node0, node1,...]]
             split_statement = ns_string.split()
             if len(split_statement) > 1:  # if there are nodes
                 nodes = split_statement[1:]
         name = split_statement[0]
-        return cls(name, nodes, master, parameters)
+        return cls(name, nodes, parameters)
 
     
 class PySpectreScript(object):
-    def __init__(self):
+    def __init__(self, path=''):
         self.nsl = []
         self.command_line_args = []
-        self.path_to_script = ''
+        self.path_to_script_out = ''
+        self.path_to_script_in = ''
         self.path_to_results = ''
+        self.psf_results = {}
+        if path:
+            self.read(path)
+    
+    #########################
+    # Netlist Modifications #
+    #########################
+    def search(self, name='', master='', node='', p_name='', p_val='', regex=False, descend=False):
+        nsl = PySpectreScript()
+        for ns in self.nsl:
+            if isinstance(ns, NetlistStatement):
+                if ns._ns_match(name, master, node, p_name, p_val, regex):
+                    nsl.add(ns, deep_copy=False)
+            elif isinstance(ns, list) and descend:
+                for subns in ns:
+                    if subns._ns_match(name, master, node, p_name, p_val, regex):
+                        nsl.add(subns, deep_copy=False)
+        return nsl
+ 
+    def replace(self, old, new):
+        for ns in self.nsl:
+            ns.replace(old, new)
 
     def change(self, key, value):
         for ns in self.nsl:
-            if key == 'name':
-                ns.name = value 
-            elif key == 'master':
-                ns.master = value 
-            elif key in ns.nodes:
-                for index, node_name in enumerate(ns.nodes): 
-                    if node_name == key:
-                        ns.nodes[index] = value
-            elif key in ns.parameters:
-                ns.parameters[key] = value
+            ns.change(key, value)
 
-    def delete(self, key):
+    def scale(self, p_name, alpha):
         for ns in self.nsl:
-            if key in ns['nodes']:
-                ns['nodes'].remove(key)
-            elif key in ns['parameters']:
-                del ns['parameters'][key]
+            ns.scale(p_name, alpha)
 
-    def add_node(self, node, index=0):
-        for ns in self.nsl:
-            ns['nodes'].insert(index, value)
-
-    def add_parameter(self, param_name, param_value):
-        for ns in self.nsl:
-            ns['parameters'][param_name] = param_value
-
-    def add_ns(self, ns, index=None):
+    def add(self, ns, index=None, deep_copy=True):
         if isinstance(ns, str):
-            ns = NetlistStatement.from_str(ns)
+            ns = [NetlistStatement.from_string(ns)]
+        elif isinstance(ns, PySpectreScript):
+            ns = ns.nsl
+        elif isinstance(ns, NetlistStatement):
+            ns = [ns]
+        if deep_copy:
+            ns = copy.deepcopy(ns)
         if index is None:
-            self.nsl.append(ns)
+            self.nsl.extend(ns)
         else: 
-            self.nsl.insert(index, ns)
+            self.nsl[index:index] = ns
 
-    def query(self, name='', master='', node_name='', param_name='', param_value=''):
-        nsl = PySpectreScript()
+    def remove(self, name='', master='', node='', p_name='', p_val='', regex=False, descend=False):
+        for ns in list(self.nsl):
+            if isinstance(ns, NetlistStatement):
+                indices = []
+                if ns._ns_match(name, master, node, p_name, p_val, regex):
+                    self.nsl.remove(ns)
+            elif isinstance(ns, list) and descend:
+                for subns in list(ns):
+                    if subns._ns_match(name, master, node, p_name, p_val, regex):
+                        ns.remove(subns)
+ 
+    def del_param(self, key):
         for ns in self.nsl:
-            if ns._ns_match(name, master, node_name, param_name, param_value):
-                nsl.add_ns(ns)
-        return nsl
-           
+            ns.del_param(key)
+
+    def add_param(self, param_name, param_value):
+        for ns in self.nsl:
+            ns.add_param(param_name, param_value)
+
+    ###############
+    # Netlist I/O #
+    ###############
+    def read(self, path):
+        """ Parses netlist at path into a PySpectreScript object. """
+        self.path_to_script_in = path
+        fin = open(path, 'r')
+        self.nsl = self._read_section(fin)
+        fin.close()
+
+    def write(self, path=''):
+        """ Writes the netlist contents to file."""
+        if path:
+            self.path_to_script_out = path
+        else:
+            head, tail = os.path.split(self.path_to_script_in)
+            tail_split = tail.split('.')
+            if len(tail_split) > 1:
+                fname = '.'.join(tail_split[:-1]) + '.pss.' + tail_split[-1]
+            else:
+                fname = tail + '.pss.scs'
+            self.path_to_script_out = os.path.join(head, fname)
+        dirname = os.path.dirname(self.path_to_script_out)
+        if dirname and not os.path.exists(dirname):
+            os.makedirs(dirname)
+        fout = open(self.path_to_script_out, 'w')
+        fout.write('// Generated by PySpectre\n')
+        self._write_section(fout, self.nsl)
+        fout.close()
+
+    def run(self, path_to_results=''):
+        """ Write netlist and run. """
+        self.write(self.path_to_script_out)
+        self.psf_results = {}
+        if path_to_results:
+            self.path_to_results = path_to_results
+        else:
+            head, tail = os.path.split(self.path_to_script_out)
+            tail = tail.split('.')[0]
+            self.path_to_results = os.path.join(head, 'psf', tail)
+        run(self.path_to_script_out, self.path_to_results, self.command_line_args)
+
+    def results(self, fname='', result=''):
+        if not fname:
+            return tuple(os.listdir(self.path_to_results))
+        else:
+            if not fname in self.psf_results:
+                import psf
+                path = os.path.join(self.path_to_results, fname)
+                results = psf.PSFReader(path)
+                results.open()
+                self.psf_results[fname] = results
+            if not result:
+                return self.psf_results[fname].getValueNames()
+            else:
+                y = self.psf_results[fname].getValuesByName(result)
+                if self.psf_results[fname].sweeps:
+                    x = self.psf_results[fname].getSweepParamValues()
+                    return x, y
+                else:
+                    return y
+     
+    ###################
+    # Private Methods #
+    ###################
     def __repr__(self):
         string_repr = ''
         for ns in self.nsl:
-            string_repr += repr(ns) + '\n'
+            if isinstance(ns, NetlistStatement):
+                string_repr += repr(ns) + '\n'
+            elif isinstance(ns, list):
+                string_repr += repr(ns[0]) + '{...} ' + repr(ns[-1]) + '\n'
         return string_repr[:-1]  # leave off the last newline
 
-    def run_script(self, path='', command_line_args=[]):
-        if path:
-            self.path_to_script = path
-        if command_line_args:
-            self.add_command_line_args(command_line_args)
-        run_script(self.path_to_script, self.command_line_args)
+    def __len__(self):
+        return len(self.nsl)
 
-    def read_script(self, path):
-        fin = open(path, 'r')
-        self.netlist = self._read_section(fin)
-        fin.close()
+    def __iter__(self):
+        return iter(self.nsl)
 
-    def write_script(self, path):
-        """ Writes the netlist contents to file."""
-        self.path_to_script = path
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path))
-        fout = open(path, 'w')
-        fout.write('// Generated by PySpectre\n')
-        self._write_section(fout, self.netlist)
-        fout.close()
-
-    def add_command_line_args(self, *arg):
-        self.command_line_args += arg
+    def __getitem__(self, index):
+        return self.nsl[index]
 
     @staticmethod
     def _write_section(fout, nsl):
@@ -325,11 +452,12 @@ class PySpectreScript(object):
             nsl.append(ns)
         return nsl
 
-def run_script(path, command_line_args):
+def run(path, path_to_results=None, command_line_args=None):
     command_str = 'spectre %s ' % path
+    if path_to_results:
+        command_str += '-raw %s' % path_to_results
     for command in command_line_args:
         command_str += command + ' '
-    print command_str
     os.system(command_str)
 
 def string_to_float(string):
@@ -358,4 +486,6 @@ def string_to_float(string):
                     return string
             else:  # no scale factor
                 return base
+        else:
+            return string
 

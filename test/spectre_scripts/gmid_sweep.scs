@@ -1,0 +1,23 @@
+// Generated for: spectre
+simulator lang=spectre
+global 0
+parameters LP=130n LN=130n WN=10u WP=10u VBS=0 VDS=1 VGS=1
+include "./ptm_hspice/130nm_bulk.pm"
+
+M0 (net13 net1 0 net16) nmos w=WN l=LN
+M1 (net6 net2 0 net7) pmos w=WP l=LP
+V5 (net6 0) vsource dc=-VDS type=dc
+V4 (net7 0) vsource dc=VBS type=dc
+V3 (net2 0) vsource dc=-VGS type=dc
+V2 (net16 0) vsource dc=-VBS type=dc
+V1 (net13 0) vsource dc=VDS type=dc
+V0 (net1 0) vsource dc=VGS type=dc
+H1 (IDSP 0) ccvs rm=1 probe=V5
+H0 (IDSN 0) ccvs rm=-1 probe=V1
+simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp=27 \
+    tnom=27 scalem=1.0 scale=1.0 gmin=1e-12 rforce=1 maxnotes=5 maxwarns=5 \
+    digits=5 cols=80 pivrel=1e-3 sensfile="../psf/sens.output" \
+    checklimitdest=psf 
+dc dc param=VGS start=0 stop=1 step=0.01 \
+    oppoint=rawfile maxiters=150 maxsteps=10000 annotate=status 
+saveOptions options save=allpub

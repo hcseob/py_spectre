@@ -1,0 +1,73 @@
+// Generated for: spectre
+// Generated on: May 25 01:58:10 2015
+// Design library name: Playground
+// Design cell name: spectre_allsims
+// Design view name: schematic
+simulator lang=spectre
+global 0
+parameters RL=50 fsin=1G R=1k
+include "/home/rboesch/Python/py_spectre/test/spectre_scripts/ptm_hspice/130nm_bulk.pm"
+
+// Library name: Playground
+// Cell name: spectre_test_RC
+// View name: schematic
+subckt spectre_test_RC VI VO VSS
+parameters _par0=1k C=1p
+    R0 (VI VO) resistor r=_par0
+    C0 (VO VSS) capacitor c=C
+ends spectre_test_RC
+// End of subcircuit definition.
+
+// Library name: Playground
+// Cell name: spectre_test_RCRC
+// View name: schematic
+subckt spectre_test_RCRC VIM VIP VOM VOP VSS
+parameters R1 C1 R2 C2
+    I5 (VIM VOM VSS) spectre_test_RC _par0=R1 C=C1
+    I4 (VIP VOP VSS) spectre_test_RC _par0=R2 C=C2
+ends spectre_test_RCRC
+// End of subcircuit definition.
+
+// Library name: analogLib
+// Cell name: ideal_balun
+// View name: schematic
+subckt ideal_balun d c p n
+    K0 (d 0 p c) transformer n1=2
+    K1 (d 0 c n) transformer n1=2
+ends ideal_balun
+// End of subcircuit definition.
+
+// Library name: Playground
+// Cell name: spectre_allsims
+// View name: schematic
+C1 (VAM 0) capacitor c=1p
+C0 (VAP 0) capacitor c=1p
+I1 (VAM VAP VOM VOP 0) spectre_test_RCRC R1=1k C1=1p R2=1k C2=1p
+I16 (VOD VOC VOP VOM) ideal_balun
+I14 (VID 0 VIP VIM) ideal_balun
+R1 (VIM VAM) resistor r=1K
+R0 (VIP VAP) resistor r=1K
+V0 (VID 0) vsource mag=1 type=sine pacmag=1 ampl=1 freq=1G
+M0 (VG VG 0 0) nmos w=1u l=180.00n
+I10 (0 VG) isource dc=100u type=dc
+simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp=27 \
+    tnom=27 scalem=1.0 scale=1.0 gmin=1e-12 rforce=1 maxnotes=5 maxwarns=5 \
+    digits=5 cols=80 pivrel=1e-3 sensfile="../psf/sens.output" \
+    checklimitdest=psf 
+tran tran stop=100n \
+    annotate=status maxiters=5 
+finalTimeOP info what=oppoint where=rawfile
+dcOp dc maxiters=150 maxsteps=10000 annotate=status
+dcOpInfo info what=oppoint where=rawfile
+dc dc param=RL start=1 stop=100 dec=11 oppoint=rawfile maxiters=150 \
+    maxsteps=10000 annotate=status
+ac ac start=1 stop=1T dec=92 values=[1k 1e4 1.1e5] annotate=status 
+noise ( VOD gnd! ) noise freq=1 param=RL start=1 stop=5000 values=[10 \
+    1000] annotate=status 
+xf ( VOD gnd! ) xf start=1 stop=1T annotate=status 
+sens (VOD ) for (dcOp dc )
+modelParameter info what=models where=rawfile
+element info what=inst where=rawfile
+outputParameter info what=output where=rawfile
+designParamVals info what=parameters where=rawfile
+saveOptions options save=allpub
