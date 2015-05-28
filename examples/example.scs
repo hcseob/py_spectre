@@ -1,0 +1,27 @@
+// Generated for: spectre
+// Generated on: May 28 02:01:21 2015
+// Design library name: Playground
+// Design cell name: spectre_4sims
+// Design view name: schematic
+simulator lang=spectre
+global 0
+parameters VSWEEP=1
+
+// Library name: Playground
+// Cell name: spectre_4sims
+// View name: schematic
+R1 (0 VO) resistor r=1K
+R0 (VI VO) resistor r=1K
+C0 (VO 0) capacitor c=1p
+V0 (VI 0) vsource dc=VSWEEP mag=1 type=sine ampl=1 freq=1G
+simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp=27 \
+    tnom=27 scalem=1.0 scale=1.0 gmin=1e-12 rforce=1 maxnotes=5 maxwarns=5 \
+    digits=5 cols=80 pivrel=1e-3 sensfile="../psf/sens.output" \
+    checklimitdest=psf 
+dcOp dc maxiters=150 maxsteps=10000 annotate=status
+dc dc param=VSWEEP start=0 stop=2 step=0.1 oppoint=rawfile maxiters=150 \
+    maxsteps=10000 annotate=status
+ac ac start=1 stop=1T dec=100 annotate=status 
+tran tran stop=10n \
+    annotate=status maxiters=5 
+saveOptions options save=allpub

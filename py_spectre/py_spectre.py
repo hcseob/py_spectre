@@ -1,3 +1,24 @@
+# The MIT License (MIT)
+# 
+# Copyright (c) 2015 Ryan Boesch
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+# the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 import copy
 import os
 import re
@@ -14,6 +35,7 @@ class NetlistStatement(object):
     Attributes:
         name: A string holding the name of the netlist statement.
         nodes: A list of strings that contains the nodes. 
+        master: An alias for the last node in nodes.
         parameters: A dictionary holding all the parameters.
         subnetlist: A list of NetlistStatement objects. It is a representation
         of a sprectre subnetlist contained in curly braces.
@@ -119,7 +141,7 @@ class NetlistStatement(object):
         if node:
             node_match = False
             for node_name in self.nodes:
-                node_match |= bool(re.match('^' + node_name + '$', node))
+                node_match |= bool(re.match('^' + node + '$', node_name))
             match &= node_match
         if p_name and p_val:
             param_match = False
@@ -406,7 +428,9 @@ class PySpectreScript(object):
     @staticmethod
     def _read_section(fin, ns_line=''):
         nsl = [] 
-        had_backslash = False
+        had_backslash = PySpectreScript._has_backslash_continuation(ns_line)
+        if had_backslash:
+            ns_line = PySpectreScript._strip_conts(ns_line, had_backslash)
         for line in fin:
             stripped_line = line.split('//')[0].strip() # remove and discard commments
             stripped_line = re.sub(r'[()]', '', stripped_line) # remove parentheses
@@ -421,10 +445,7 @@ class PySpectreScript(object):
                     segment_name = ns_segment.split()[0]
                     if segment_name in ['subckt', 'section']:
                         # found start of subnetlist, step into recursion
-                        # use next line just to get the name
-                        first_statement = NetlistStatement.from_string(ns_segment)
-                        sub_name = first_statement.nodes[0]  # subckt subckt_name
-                        sub_statements = PySpectreScript._read_section(fin, ns_segment)
+                        sub_statements = PySpectreScript._read_section(fin, stripped_line)
                         nsl.append(sub_statements)
                     elif segment_name in ['ends', 'endsection']:
                         # found end of subnetlist
