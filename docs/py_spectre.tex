@@ -47,157 +47,30 @@ showstringspaces=false            %
 
 \section{Beginner Examples}
 \subsection{Run Script}
-\begin{python}
-<<<<<<< HEAD
-\pythonexternal{../examples/example1_1.scs}
-=======
 \pythonexternal{../examples/example1_1.py}
->>>>>>> 2e461c400505a65709c2caf7f2a50cc6fc28ce4b
-\end{python}
 
 \subsection{Run and Read Results}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-pss.run()
-
-print pss.results()
-print pss.results('dc.dc')
-print pss.results('dc.dc.', 'VO')
-\end{python}
-
+\pythonexternal{../examples/example1_2.py}
 
 \subsection{Change Parameter and Run}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-pss.search('parameters').change('RL', 100)
-pss.run()
-\end{python}
+\pythonexternal{../examples/example1_3.py}
 
 \subsection{Print All Rs and Cs}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-print pss.search('R*')
-print pss.search('C*')
-\end{python}
+\pythonexternal{../examples/example1_4.py}
 
 \newpage
 \section{Intermediate Examples}
 \subsection{Scale All Rs and Cs by 10\%}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-print pss.search('R*').scale('r', 1.1)
-print pss.search('C*').scale('c', 1.1)
-\end{python}
+\pythonexternal{../examples/example2_1.py}
 
 \subsection{Delete and Add Netlist Statements}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-pss.search('R1').remove()
-after_line_number = 5
-netlist_statement = 'R1 VO 0 resistor r=1k'
-pss.add(netlist_statement, after_line_number)
-\end{python}
-
-\subsection{No Initialization: Run and Read}
-\begin{python}
-from py_spectre import *
-run('example.scs')
-print read_results('./scripts/psf', 'dc.dc', 'VO')
-\end{python}
+\pythonexternal{../examples/example2_2.py}
 
 \subsection{Intermediate Search Examples}
-\begin{python}
-from py_spectre import *
-pss = PySpectreScript('example.scs')
-# find all capacitors > 1pF
-constraint = lambda x: x > 1e-12
-print pss.search(p_name='c', p_val=constraint)
-\end{python}
-
+\pythonexternal{../examples/example2_3.py}
 
 \newpage
 \section{Advanced Examples}
 \subsection{gm/id for 5 processes}
 
-\newpage
-\section{Cheat Sheet: Netlist I/O}
-\begin{python}
-from py_spectre import *
-""" class PySpectreScript"""
-# initalize empty script
-pss = PySpectreScript() 
-# initialize from script at path
-pss = PySpectreScript(path_to_script_in) 
-
-""" read """
-# reinitialize from script at path
-pss.read(path_to_script_in) 
-
-""" write """
-# defaults to same path as input script
-pss.write() 
-# if initialized empty script, you must include path
-pss.write(path_to_script_out) 
-
-""" run """
-# calls write() to update any changes
-# defaults to script path + psf + fname subdirectory
-pss.run()
-# can also set the results path
-pss.run(path_to_results)
-# can also run a script without creating a pss object
-run(path_to_script, path_to_results)
-
-""" read_results """
-# print the simulation files in results folder
-print pss.read_results()
-# print the results available in results file
-fname = 'dc.dc'
-print pss.read_results(fname)
-# print the values for result VO
-print pss.read_results(fname, 'VO')
-# can also read results without creating an object
-# must include path
-print read_results(path, fname, 'VO')
-
-\end{python}
-
-\newpage
-\section{Cheat Sheet: Netlist Modifications}
-\begin{python}
-""" pss.search """
-# every modification starts with a search
-# every search result can be modified
-print pss.search('parameters')
-print pss.search('R*')
-print pss.search(r'^R[1-9].?', regex=True)
-constraint = lambda x: x < 10e-12
-print pss.search(name='R*', p_name='r', p_val=constraint)
-
-""" change """
-# change node or parameter
-pss.search(str_query).change(node_or_param, new_value)
-
-""" replace """
-# essentially find/replace for the netlist statement
-pss.search(str_query).replace('old text', 'new text')
-
-""" delete_parameter """
-
-""" add_parameter """
-
-""" scale """
-
-""" add """
-
-""" remove"""
-
-
-
-\end{python}
 \end{document}
