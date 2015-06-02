@@ -3,5 +3,5 @@ pss = PySpectreScript('example.scs')
 pss.run()
 
 print pss.results()
-print pss.results('dc.dc')
-print pss.results('dc.dc', 'VO')
+print pss.results('dcOp.dc')
+print pss.results('dcOp.dc', 'VO')

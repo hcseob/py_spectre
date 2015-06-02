@@ -124,29 +124,23 @@ class NetlistStatement(object):
         expressions are supported through the regex flag. Comparison functions
         are supported for the p_val input. 
         """
-        if not regex:
-            name = name.replace('*', '.*?')
-            master = master.replace('*', '.*?')
-            node = node.replace('*', '.*?')
-            p_name = p_name.replace('*', '.*?')
-            if isinstance(p_val, str): p_val = p_val.replace('*', '.*?')
         match = True
         if name and not self.name: match = False
         if master and not self.master: match = False
         if node and not self.nodes: match = False
         if p_name and not self.parameters: match = False
         if p_val and not self.parameters: match = False 
-        if name: match &= bool(re.match('^' + name + '$', self.name))
-        if master: match &= bool(re.match('^' + master + '$', self.master))
+        if name: match &= self.compare(name, self.name, regex) 
+        if master: match &= self.compare(master, self.master, regex) 
         if node:
             node_match = False
             for node_name in self.nodes:
-                node_match |= bool(re.match('^' + node + '$', node_name))
+                node_match |= self.compare(node, node_name, regex)  
             match &= node_match
         if p_name and p_val:
             param_match = False
             for key in self.parameters:
-                if re.match('^' + p_name + '$', key):
+                if self.compare(p_name, key, regex):
                     value = self.parameters[key]
                     if hasattr(p_val, '__call__'):
                         value_float = string_to_float(value)
@@ -157,20 +151,27 @@ class NetlistStatement(object):
                         if not isinstance(param_match, bool):
                             param_match = False
                     else:
-                        param_match |= bool(re.match('^' + p_val + '$', value))
+                        param_match |= self.compare(p_val, value, regex) 
             match &= param_match
         elif p_name:
             param_name_match = False
             for key in self.parameters:
-                param_name_match |= bool(re.match('^' + p_name + '$', key))
+                param_name_match |= self.compare(p_name, key, regex) 
             match &= param_name_match
         elif p_val:
             param_value_match = False
             for value in self.parameters.values():
-                param_value_match |= bool(re.match('^' + str(p_val) + '$', value))
+                param_value_match |= self.compare(str(p_val), str(value), regex) 
             match &= param_value_match
         return match
 
+    @staticmethod
+    def compare(match_string, string, regex):
+        if not regex:
+            match_string = match_string.replace('*', '.*?')
+            match_string = '^' + match_string + '$'
+        return bool(re.match(match_string, string)) 
+        
     @classmethod
     def from_string(cls, ns_string):
         """ Alternative constructor that parses an ns_string into the netlist statement variables.  
@@ -248,14 +249,20 @@ class PySpectreScript(object):
     #########################
     def search(self, name='', master='', node='', p_name='', p_val='', regex=False, descend=False):
         nsl = PySpectreScript()
+        has_descend_str = isinstance(descend, str)
         for ns in self.nsl:
-            if isinstance(ns, NetlistStatement):
+            if isinstance(ns, NetlistStatement) and not has_descend_str:
                 if ns._ns_match(name, master, node, p_name, p_val, regex):
                     nsl.add(ns, deep_copy=False)
             elif isinstance(ns, list) and descend:
-                for subns in ns:
-                    if subns._ns_match(name, master, node, p_name, p_val, regex):
-                        nsl.add(subns, deep_copy=False)
+                if has_descend_str: 
+                    descend_now = NetlistStatement.compare(descend, ns[0].nodes[0], regex)
+                else:
+                    descend_now = descend
+                if descend_now:
+                    for subns in ns:
+                        if subns._ns_match(name, master, node, p_name, p_val, regex):
+                            nsl.add(subns, deep_copy=False)
         return nsl
  
     def replace(self, old, new):
@@ -333,7 +340,7 @@ class PySpectreScript(object):
         self._write_section(fout, self.nsl)
         fout.close()
 
-    def run(self, path_to_results=''):
+    def run(self, path_to_results='', verbose=True):
         """ Write netlist and run. """
         self.write(self.path_to_script_out)
         self.psf_results = {}
@@ -343,7 +350,7 @@ class PySpectreScript(object):
             head, tail = os.path.split(self.path_to_script_out)
             tail = tail.split('.')[0]
             self.path_to_results = os.path.join(head, 'psf', tail)
-        run(self.path_to_script_out, self.path_to_results, self.command_line_args)
+        run(self.path_to_script_out, self.path_to_results, self.command_line_args, verbose)
 
     def results(self, fname='', result=''):
         if not fname:
@@ -473,12 +480,14 @@ class PySpectreScript(object):
             nsl.append(ns)
         return nsl
 
-def run(path, path_to_results=None, command_line_args=None):
+def run(path, path_to_results=None, command_line_args=None, verbose=True):
     command_str = 'spectre %s ' % path
     if path_to_results:
         command_str += '-raw %s' % path_to_results
     for command in command_line_args:
         command_str += command + ' '
+    if not verbose:
+        command_str += ' >> ' + path + '.log'
     os.system(command_str)
 
 def string_to_float(string):

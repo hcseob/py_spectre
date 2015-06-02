@@ -1,5 +1,6 @@
 from py_spectre import * 
 import random
+import sys
 import unittest
 
 class NetlistStatementTestCase(unittest.TestCase):
@@ -15,7 +16,6 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertTrue('R' in R1.parameters)
         self.assertTrue(R1._ns_match(name='R1'))
         self.assertTrue(R1._ns_match(name='R*'))
-        self.assertFalse(R1._ns_match(name='R*', regex=True))
         self.assertTrue(R1._ns_match(name='R.*?', regex=True))
         self.assertTrue(R1._ns_match(node='vid'))
         self.assertFalse(R1._ns_match(node='vida'))
@@ -49,7 +49,6 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertEqual(R2.parameters["aTasi"], '5e7')
         self.assertTrue(R2._ns_match(name='R2'))
         self.assertTrue(R2._ns_match(name='R*'))
-        self.assertFalse(R2._ns_match(name='R*', regex=True))
         self.assertTrue(R2._ns_match(name='R.*?', regex=True))
         self.assertTrue(R2._ns_match(node='node0'))
         self.assertTrue(R2._ns_match(node='node1'))
@@ -81,7 +80,6 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertEqual(name_and_nodes.nodes[2], 'node2')
         self.assertTrue(name_and_nodes._ns_match(name='name_and_nodes'))
         self.assertTrue(name_and_nodes._ns_match(name='name*'))
-        self.assertFalse(name_and_nodes._ns_match(name='name*', regex=True))
         self.assertTrue(name_and_nodes._ns_match(name='name.*?', regex=True))
         self.assertTrue(name_and_nodes._ns_match(node='node0'))
         self.assertTrue(name_and_nodes._ns_match(node='node1'))
@@ -118,7 +116,6 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertEqual(len(name_and_params.nodes), 0)
         self.assertTrue(name_and_params._ns_match(name='name_and_params'))
         self.assertTrue(name_and_params._ns_match(name='name*'))
-        self.assertFalse(name_and_params._ns_match(name='name*', regex=True))
         self.assertTrue(name_and_params._ns_match(name='name.*?', regex=True))
         self.assertFalse(name_and_params._ns_match(node='node0'))
         self.assertFalse(name_and_params._ns_match(node='node2'))
@@ -158,7 +155,6 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertEqual(name_master_and_params.parameters["param2"], 'val2')
         self.assertTrue(name_master_and_params._ns_match(name='name_master_and_params'))
         self.assertTrue(name_master_and_params._ns_match(name='name*'))
-        self.assertFalse(name_master_and_params._ns_match(name='name*', regex=True))
         self.assertTrue(name_master_and_params._ns_match(name='name.*?', regex=True))
         self.assertFalse(name_master_and_params._ns_match(node='node0'))
         self.assertFalse(name_master_and_params._ns_match(node='node2'))
@@ -188,12 +184,11 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertFalse(name_master_and_params._ns_match(p_name='*', p_val=constraint3))
         self.assertFalse(name_master_and_params._ns_match(p_name='*', p_val=constraint4))
 
-
-
 class PySpectreScriptTestCase(unittest.TestCase):
     """ Tests for py_spectre PySpectreScript class. """
     def test_search(self):
         path_to_script = './spectre_scripts/spectre_test0.scs'
+        print os.getcwd()
         pss = PySpectreScript(path_to_script)
         """ name tests """
         self.assertEqual(len(pss.search('R*')), 2)
@@ -280,6 +275,20 @@ class PySpectreScriptTestCase(unittest.TestCase):
         self.assertEqual(len(pss.search(p_val=constraint2)), 0)
         self.assertEqual(len(pss.search(p_val=constraint3)), 0)
         self.assertEqual(len(pss.search(p_val=constraint4)), 0)
+        # descend tests
+        self.assertEqual(len(pss.search('R0', descend=True)), 2)
+        self.assertEqual(len(pss.search('R0', descend='spectre_test_RC')), 1)
+        self.assertEqual(len(pss.search('R0', descend='spectre_test_RCRC')), 0)
+        self.assertEqual(len(pss.search('R1', descend=True)), 1)
+        self.assertEqual(len(pss.search('R1', descend='spectre_test_RC')), 0)
+        self.assertEqual(len(pss.search('R1', descend='spectre_test_RCRC')), 0)
+        self.assertEqual(len(pss.search('C0', descend=True)), 2)
+        self.assertEqual(len(pss.search('C0', descend='spectre_test_RC')), 1)
+        self.assertEqual(len(pss.search('C0', descend='spectre_test_RCRC')), 0)
+
+        self.assertEqual(len(pss.search('I5', descend=True)), 1)
+        self.assertEqual(len(pss.search('I5', descend='spectre_test_RC')), 0)
+        self.assertEqual(len(pss.search('I5', descend='spectre_test_RCRC')), 1)
 
     def test_replace(self):
         path_to_script = './spectre_scripts/spectre_test0.scs'
@@ -422,11 +431,11 @@ class PySpectreScriptTestCase(unittest.TestCase):
         self.assertEqual(pss_str, str(pss))
 
     def test_run_write_read_results(self):
-        run_scripts = True
+        run_scripts = False
         path_to_script = './spectre_scripts/spectre_test0.scs'
         pss = PySpectreScript(path_to_script)
         if run_scripts:
-            pss.run()
+            pss.run(verbose=False)
             print pss.results()
             print pss.results('dc.dc')
             print pss.results('dc.dc', 'VOD')
@@ -434,6 +443,21 @@ class PySpectreScriptTestCase(unittest.TestCase):
             for result in pss.results('dcOp.dc'):
                 value = pss.results('dcOp.dc', result)
                 print str(result) + ': ' + str(value)
+            pss.run(verbose=True)
+            pss.run()
+
+    def test_examples(self):
+        run_examples = True 
+        if run_examples:
+            examples_dir = '../examples/'
+            sys.path.append(examples_dir)
+            working_dir = os.getcwd()
+            os.chdir(examples_dir)
+            for fname in os.listdir(examples_dir):
+                if len(fname) > 2 and fname[-2:] == 'py':
+                    module = fname.split('.')[0]
+                    __import__(module)
+            os.chdir(working_dir)
 
 if __name__ == '__main__':
     unittest.main()
