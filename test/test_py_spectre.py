@@ -184,6 +184,7 @@ class NetlistStatementTestCase(unittest.TestCase):
         self.assertFalse(name_master_and_params._ns_match(p_name='*', p_val=constraint3))
         self.assertFalse(name_master_and_params._ns_match(p_name='*', p_val=constraint4))
 
+
 class PySpectreScriptTestCase(unittest.TestCase):
     """ Tests for py_spectre PySpectreScript class. """
     def test_search(self):
@@ -434,6 +435,7 @@ class PySpectreScriptTestCase(unittest.TestCase):
         run_scripts = False
         path_to_script = './spectre_scripts/spectre_test0.scs'
         pss = PySpectreScript(path_to_script)
+        pss.write()
         if run_scripts:
             pss.run(verbose=False)
             print pss.results()
@@ -447,7 +449,7 @@ class PySpectreScriptTestCase(unittest.TestCase):
             pss.run()
 
     def test_examples(self):
-        run_examples = True 
+        run_examples = False 
         if run_examples:
             examples_dir = '../examples/'
             sys.path.append(examples_dir)

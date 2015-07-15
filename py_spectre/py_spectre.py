@@ -440,7 +440,9 @@ class PySpectreScript(object):
             ns_line = PySpectreScript._strip_conts(ns_line, had_backslash)
         for line in fin:
             stripped_line = line.split('//')[0].strip() # remove and discard commments
-            stripped_line = re.sub(r'[()]', '', stripped_line) # remove parentheses
+            split_line = stripped_line.split('=', 1)
+            split_line[0] = re.sub(r'[()]', '', split_line[0]) # remove parentheses
+            stripped_line = '='.join(split_line)
             ns_segment = PySpectreScript._strip_conts(stripped_line, had_backslash)
             if PySpectreScript._has_plus_cont(stripped_line, had_backslash) or had_backslash:
                 ns_line += ns_segment

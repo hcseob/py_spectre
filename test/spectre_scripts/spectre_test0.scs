@@ -14,7 +14,7 @@ include "/home/rboesch/Python/py_spectre/test/spectre_scripts/ptm_hspice/130nm_b
 subckt spectre_test_RC VI VO VSS
 parameters _par0=1k C=1p
     R0 (VI VO) resistor r=_par0
-    C0 (VO VSS) capacitor c=C
+    C0 (VO VSS) capacitor c=1*(C)
 ends spectre_test_RC
 // End of subcircuit definition.
 
