@@ -68,7 +68,6 @@ class NetlistStatement(object):
     
     def replace(self, old, new):
         self.name = self.name.replace(old, new)
-        self.master = self.master.replace(old, new)
         for j, node in enumerate(self.nodes):
             self.nodes[j] = self.nodes[j].replace(old, new)
         for key in self.parameters:
