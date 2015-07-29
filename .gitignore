@@ -1,3 +1,5 @@
 *.pyc
+*.pys.log
+*.pys.scs
 examples/psf/
-test/psf/
+test/spectre_scripts/psf/

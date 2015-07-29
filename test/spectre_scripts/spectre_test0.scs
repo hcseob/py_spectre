@@ -6,7 +6,7 @@
 simulator lang=spectre
 global 0
 parameters RL=50 fsin=1G R=1k
-include "/home/rboesch/Python/py_spectre/test/spectre_scripts/ptm_hspice/130nm_bulk.pm"
+include "./ptm_hspice/130nm_bulk.pm"
 
 // Library name: Playground
 // Cell name: spectre_test_RC

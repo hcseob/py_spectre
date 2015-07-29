@@ -432,12 +432,12 @@ class PySpectreScriptTestCase(unittest.TestCase):
         self.assertEqual(pss_str, str(pss))
 
     def test_run_write_read_results(self):
-        run_scripts = False
+        run_scripts = True
         path_to_script = './spectre_scripts/spectre_test0.scs'
         pss = PySpectreScript(path_to_script)
         pss.write()
         if run_scripts:
-            pss.run(verbose=False)
+            pss.run(verbose=True)
             print pss.results()
             print pss.results('dc.dc')
             print pss.results('dc.dc', 'VOD')
@@ -449,7 +449,7 @@ class PySpectreScriptTestCase(unittest.TestCase):
             pss.run()
 
     def test_examples(self):
-        run_examples = False 
+        run_examples = True 
         if run_examples:
             examples_dir = '../examples/'
             sys.path.append(examples_dir)
