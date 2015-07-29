@@ -327,9 +327,9 @@ class PySpectreScript(object):
             head, tail = os.path.split(self.path_to_script_in)
             tail_split = tail.split('.')
             if len(tail_split) > 1:
-                fname = '.'.join(tail_split[:-1]) + '.pss.' + tail_split[-1]
+                fname = '.'.join(tail_split[:-1]) + '.pys.' + tail_split[-1]
             else:
-                fname = tail + '.pss.scs'
+                fname = tail + '.pys.scs'
             self.path_to_script_out = os.path.join(head, fname)
         dirname = os.path.dirname(self.path_to_script_out)
         if dirname and not os.path.exists(dirname):
